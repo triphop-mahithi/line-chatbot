@@ -10,8 +10,9 @@ import { Calculator, RotateCcw, Package, Shield, Search, Save, CheckCircle, Chev
 import { useToast } from '@/hooks/use-toast';
 import QuoteResult from './QuoteResult';
 import { isPackageEligible, filterEligiblePackages, getEligibilityReason } from '@/utils/packageFilters';
-
-
+import Step1 from '@/components/steps/Step1';
+import Step2 from '@/components/steps/Step2';
+import Step3 from '@/components/steps/Step3';
 
 interface CalculatorData {
   gender: string;
@@ -55,6 +56,11 @@ interface SelectedPackage {
   }[];
 }
 
+type PricingTier = {
+  ageFrom: number;
+  ageTo: number;
+  price: number;
+};
 
 const InsuranceCalculator = () => {
 
@@ -125,25 +131,6 @@ useEffect(() => {
   fetchData();
 }, []);
 
- const allPackages = [
-    'AIA Health Happy Kids',
-    'AIA H&S (new standard)',
-    'AIA H&S Extra (new standard)',
-    'AIA Health Saver',
-    'AIA Health Happy',
-    'AIA Infinite Care (new standard)',
-    'HB',
-    'AIA HB Extra',
-    'AIA Health Cancer',
-    'AIA Care for Cancer',
-    'AIA CI Plus',
-    'AIA CI Top Up',
-    'Lady Care & Lady Care Plus',
-    'AIA TPD',
-    'AIA Multi-Pay CI',
-    'AIA Total Care',
-    'Accident Coverage'
-  ]; 
 
 // Category data
   const categories = {
@@ -186,11 +173,6 @@ useEffect(() => {
   
   // ดึงข้อมูลจาก object
   /* ฟังก์ชันสำหรับการคัดกรองข้อมูล */
-const getEligibleCategories = () => {
-  if(!formData.currentAge || !formData.gender) return [];
-
-}
-
   const getEligiblePackages = () => {
   if (!formData.currentAge || !formData.gender) return [];
 
@@ -210,7 +192,7 @@ const getEligibleCategories = () => {
   /* ฟังก์ชันสำหรับการคัดกรองข้อมูล */
   const getFilteredCategories = () => {
     const validGender = (formData.gender === 'male' || formData.gender === 'female') ? formData.gender : 'male';
-    const validAge = formData.currentAge && parseInt(formData.currentAge) > 0 ? parseInt(formData.currentAge) : 25;
+    const validAge = formData.currentAge && parseInt(formData.currentAge) > 0 ? parseInt(formData.currentAge) : null;
 
     const filteredCategories = { ...categories };
     
@@ -227,6 +209,9 @@ const getEligibleCategories = () => {
 
     return filteredCategories;
   };
+
+  
+
 // getSubPlans ดึงข้อมูลจาก state : packagesData
   const getSubPlans = (packageName: string): SubPlan[] => {
     const currentAge = parseInt(formData.currentAge);
@@ -401,6 +386,10 @@ const getPlanOptionsFromPricing = (packageName: string): { label: string }[] => 
     });
   };
 
+  /*
+
+  (version 1.1.0)
+
   const handleSearch = () => {
     if (!stepData.selectedPackage || !stepData.selectedPlan) {
       toast({
@@ -431,6 +420,7 @@ const getPlanOptionsFromPricing = (packageName: string): { label: string }[] => 
     });
   };
 
+*/
   const handleSave = () => {
     setFormData({
       ...formData,
@@ -481,6 +471,73 @@ const getPlanOptionsFromPricing = (packageName: string): { label: string }[] => 
     }
   };
 
+  // testing calculation (static)
+  const parsePlanLabel = (label: string) => {
+    const regex = /อายุ (\d+) ถึง (\d+) : ฿ ([\d,]+)/;
+    const match = label.match(regex);
+
+    if (!match) return null;
+
+    const ageFrom = parseInt(match[1]);
+    const ageTo = parseInt(match[2]);
+    const price = parseInt(match[3].replace(/,/g, ''));
+
+  return { ageFrom, ageTo, price };
+};
+
+const calculateTotalByCoverage = (label: string, coverageAge: number) => {
+  const parsed = parsePlanLabel(label);
+  if (!parsed) return 0;
+
+  const { ageFrom, ageTo, price } = parsed;
+
+  // จำกัดอายุความคุ้มครองไม่ให้เกินช่วงของแพ็กเกจ
+  const actualEndAge = Math.min(ageTo, coverageAge);
+  const coverageYears = actualEndAge - ageFrom;
+
+  if (coverageYears <= 0) return 0;
+
+  return price * coverageYears;
+};
+
+// dynamics 
+const getPricingTiersFromPackage = (
+  pkg: any,
+  gender: 'male' | 'female'
+): PricingTier[] => {
+  if (!pkg?.pricing || !Array.isArray(pkg.pricing)) return [];
+
+  return pkg.pricing
+    .filter((p: any) => p[gender] != null)
+    .map((p: any) => ({
+      ageFrom: p.ageFrom,
+      ageTo: p.ageTo,
+      price: p[gender],
+    }));
+};
+
+const calculateTieredPremium = (
+  startAge: number,
+  endAge: number,
+  tiers: PricingTier[]
+): number => {
+  let total = 0;
+
+  for (const tier of tiers) {
+    const overlapStart = Math.max(startAge, tier.ageFrom);
+    const overlapEnd = Math.min(endAge, tier.ageTo);
+
+    const yearsInTier = overlapEnd - overlapStart + 1;
+    if (yearsInTier > 0) {
+      total += tier.price * yearsInTier;
+    }
+  }
+
+  return total;
+};
+
+
+
   const calculatePremium = () => {
     if (!formData.gender || !formData.currentAge || !formData.coverageAge || 
         formData.packages.length === 0 || formData.plans.length === 0) {
@@ -510,12 +567,33 @@ const getPlanOptionsFromPricing = (packageName: string): { label: string }[] => 
       description: "พบเบี้ยประกันที่เหมาะสมแล้ว",
     });
   };
+  // Testing calculation
+  //const planLabel = stepData.selectedPlan; // เช่น "อายุ 11 ถึง 15 : ฿ 16400"
+  //const coverageAge = parseInt(formData.coverageAge); // เช่น 15
+  //const totalPremium = calculateTotalByCoverage(planLabel, coverageAge);
+  //console.log("เบี้ยรวมตามอายุคุ้มครอง:", totalPremium.toLocaleString());
 
+  const selectedPackageName = stepData.selectedPackage;
+  const pkg = packagesData.find(p => p.name === selectedPackageName);
+
+  const gender = formData.gender as 'male' | 'female';
+  const currentAge = parseInt(formData.currentAge);
+  const coverageAge = parseInt(formData.coverageAge);
+
+  if (pkg && gender && currentAge && coverageAge) {
+    const tiers = getPricingTiersFromPackage(pkg, gender);
+    const totalPremium = calculateTieredPremium(currentAge, coverageAge, tiers);
+
+    console.log("💰 เบี้ยรวมตามช่วงอายุ:", totalPremium.toLocaleString());
+  }
+
+  
   // Render Step-by-steps เราใช้ case มาช่วยในการทำ
   /* Multi-step flow  */
   const renderStepContent = () => {
     switch (currentStep) {
       case 1:
+        {/* 
         console.log("📦 categoriesData:", categoriesData);
         const eligiblePackages = getEligiblePackages();
         return (
@@ -541,9 +619,18 @@ const getPlanOptionsFromPricing = (packageName: string): { label: string }[] => 
             </div>
           </div>
         );
+        */}
+      const eligiblePackages = getEligiblePackages();
+      return (
+        <Step1
+          eligiblePackages={eligiblePackages}
+          selectPackage={selectPackage}
+          goBack={goBackStep}
+        />);
 
       case 2:
         //const availablePlans = plansByPackage[stepData.selectedPackage] || [];
+         {/* 
         const availablePlans = getPlanOptionsFromPricing(stepData.selectedPackage);
         console.log("Selected Package:", stepData.selectedPackage);
         console.log("Available Plans", availablePlans);
@@ -574,58 +661,28 @@ const getPlanOptionsFromPricing = (packageName: string): { label: string }[] => 
       </div>
     </div>
   );
+  */}
+      const availablePlans = getPlanOptionsFromPricing(stepData.selectedPackage);
+      return (
+        <Step2
+          availablePlans={availablePlans}
+          selectedPackage={stepData.selectedPackage}
+          selectPlan={selectPlan}
+          goBack={goBackStep}
+        />);
+  
 
+      /* 
+      FIXME: เมื่อถึงขั้นตอนที่ 3 แล้วมีการแสดงปุ่ม "บันทึกข้อมูล" ปัญหาคือมันสามารถกดได้เพียงครั้งเดียวซึ่งหากต้องกดปุ่มใหม่จะต้องรีเฟรสหน้าจอ
+            เนื่องจาก เปลี่ยนจาก "บันทึกข้อมูล" -> "บันทึกข้อมูล"
 
+      */
       case 3:
-          const subPlans = getSubPlans(stepData.selectedPackage);
-          const selectedPlanData = subPlans.find(plan => plan.name === stepData.selectedPlan);
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h4 className="font-semibold text-brand-green">ค้นหาเบี้ยประกัน</h4>
-        <Button variant="outline" size="sm" onClick={goBackStep}>
-          ย้อนกลับ
-        </Button>
-      </div>
-
-      <div className="bg-gray-50 p-4 rounded-lg space-y-2 text-sm">
-        <p><strong>แพ็กเกจ:</strong> {stepData.selectedPackage}</p>
-        <p><strong>แผน:</strong> {stepData.selectedPlan}</p>
-        <p><strong>อายุ:</strong> {formData.currentAge} ปี</p>
-        <p><strong>เพศ:</strong> {formData.gender === 'male' ? 'ชาย' : 'หญิง'}</p>
-
-        {selectedPlanData ? (
-          <div className="bg-green-50 border border-green-200 p-3 rounded-md space-y-1 mt-2">
-            <p className="text-green-800 font-medium">💡 เบี้ยประกันที่คำนวณได้</p>
-            <p className="text-green-700">รายปี: ฿{selectedPlanData.annualPremium.toLocaleString()}</p>
-            <p className="text-green-700">รายเดือน (ประมาณ): ฿{selectedPlanData.monthlyPremium.toLocaleString()}</p>
-          </div>
-        ) : (
-          <div className="bg-red-50 border border-red-200 p-3 rounded-md mt-2">
-            <p className="text-red-600 font-medium">⚠️ ไม่พบข้อมูลเบี้ยสำหรับแผนที่เลือก</p>
-            <p className="text-sm text-red-500">โปรดตรวจสอบอายุหรือเพศที่กรอก</p>
-          </div>
-        )}
-      </div>
-
-      <Button 
-        onClick={handleSearch}
-        className="brand-green text-white w-full"
-        disabled={!selectedPlanData}
-      >
-        <Search className="w-4 h-4 mr-2" />
-        ค้นหาเบี้ยประกัน
-      </Button>
-    </div>
-  );
-
-
-      case 4:
+        {/* 
         return (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h4 className="font-semibold text-brand-green">ผลลัพธ์การค้นหา</h4>
+              <h4 className="font-semibold text-brand-green">สรุปผลการค้นหา</h4>
               <Button variant="outline" size="sm" onClick={goBackStep}>
                 ย้อนกลับ
               </Button>
@@ -656,11 +713,21 @@ const getPlanOptionsFromPricing = (packageName: string): { label: string }[] => 
             </Button>
           </div>
         );
-
+        */}
+        return (
+        <Step3
+          searchResults={stepData.searchResults}
+          saved={!!stepData.savedData}
+          onSave={handleSave}
+          goBack={goBackStep}
+        />
+      );
       default:
         return null;
     }
   };
+  {/*(version 1.1.0) : 
+    NOTE: ยังไม่มีการเรียกใช้งาน
 
   const renderPackageContent = (packageName: string, categoryId: string) => {
     const isSelected = selectedPackages.some(p => p.id === `${categoryId}-${packageName}`);
@@ -759,8 +826,12 @@ const getPlanOptionsFromPricing = (packageName: string): { label: string }[] => 
       </div>
     );
   };
-
   const filteredCategories = getFilteredCategories();
+*/}
+
+
+
+
 
   return (
     <section id="calculator" className="py-8 bg-gray-50">
@@ -854,12 +925,12 @@ const getPlanOptionsFromPricing = (packageName: string): { label: string }[] => 
               {/* 4-Step Process */}
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold text-brand-green border-b pb-2">
-                  เลือกประกันภัย (4 ขั้นตอน)
+                  เลือกประกันภัย (3 ขั้นตอน)
                 </h3>
                 
                 {/* Progress Indicator */}
                 <div className="flex items-center justify-between mb-4">
-                  {[1, 2, 3, 4].map((step) => (
+                  {[1, 2, 3].map((step) => (
                     <div key={step} className="flex items-center">
                       <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold ${
                         currentStep >= step ? 'bg-brand-green text-white' : 'bg-gray-200 text-gray-600'
@@ -877,7 +948,8 @@ const getPlanOptionsFromPricing = (packageName: string): { label: string }[] => 
 
                 {/* Step Buttons */}
                 {currentStep === 0 && (
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  // (version 1.1.0) : เราได้ทำการปรับจาก 4-cols เป็น 3-cols 
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                     <Button 
                       onClick={handlePackageSelection}
                       variant="outline" 
@@ -894,6 +966,7 @@ const getPlanOptionsFromPricing = (packageName: string): { label: string }[] => 
                       <Shield className="w-5 h-5" />
                       <span className="text-xs">เลือกแผน</span>
                     </Button>
+                    {/* (version 1.1.0)
                     <Button 
                       variant="outline" 
                       className="h-16 flex-col gap-1" 
@@ -902,6 +975,7 @@ const getPlanOptionsFromPricing = (packageName: string): { label: string }[] => 
                       <Search className="w-5 h-5" />
                       <span className="text-xs">ค้นหา</span>
                     </Button>
+                    */}
                     <Button 
                       variant="outline" 
                       className="h-16 flex-col gap-1" 
@@ -922,7 +996,11 @@ const getPlanOptionsFromPricing = (packageName: string): { label: string }[] => 
               </div>
 
               {/* Category Selection Section */}
+
+              {/* (version 1.1.0)  เราจะยังไม่พิจารณาส่วนด้านลงทั้งหมด*/}
+              
               <div className="space-y-4">
+              {/* 
                 <h3 className="text-lg font-semibold text-brand-green border-b pb-2">
                   เลือกแพ็กเกจตามหมวดหมู่
                 </h3>
@@ -933,8 +1011,14 @@ const getPlanOptionsFromPricing = (packageName: string): { label: string }[] => 
                     <span>กรองสำหรับ: {formData.gender === 'male' ? 'ชาย' : 'หญิง'} อายุ {formData.currentAge} ปี</span>
                   </div>
                 )}
+                */}
 
                 {/* No eligible packages message */}
+
+                {/* (version 1.1.0)  เราจะยังไม่พิจารณาส่วนด้านลงทั้งหมด*/}
+              
+                {/* 
+
                 {Object.keys(filteredCategories).length === 0 && (
                   <div className="text-center py-8">
                     <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-3" />
@@ -942,8 +1026,13 @@ const getPlanOptionsFromPricing = (packageName: string): { label: string }[] => 
                     <p className="text-sm text-gray-500 mt-1">กรุณาตรวจสอบอายุและเพศที่กรอก</p>
                   </div>
                 )}
-
+                
+                */}
                 {/* Category View */}
+
+                {/* (version 1.1.0)  เราจะยังไม่พิจารณาส่วนด้านลงทั้งหมด*/}
+              
+                {/* 
                 {Object.values(filteredCategories).map((category) => (
                   <Collapsible 
                     key={category.id}
@@ -983,8 +1072,11 @@ const getPlanOptionsFromPricing = (packageName: string): { label: string }[] => 
                     </CollapsibleContent>
                   </Collapsible>
                 ))}
+                */}
 
                 {/* Selected Summary */}
+
+                {/* 
                 {selectedPackages.some(pkg => pkg.selectedPlans.length > 0) && (
                   <div className="mt-6 p-6 bg-gradient-to-r from-brand-green/10 to-brand-gold/10 rounded-lg border border-brand-green/20">
                     <h4 className="font-bold text-brand-green mb-4 text-lg">สรุปแพ็กเกจที่เลือก:</h4>
@@ -1015,9 +1107,14 @@ const getPlanOptionsFromPricing = (packageName: string): { label: string }[] => 
                     </div>
                   </div>
                 )}
-              </div>
 
+
+                */}
+
+
+              </div>
               {/* Action Buttons */}
+  
               <div className="space-y-3 pt-4 border-t">
                 <Button 
                   onClick={calculatePremium}

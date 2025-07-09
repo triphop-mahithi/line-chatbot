@@ -23,7 +23,7 @@ func main() {
 	r := gin.Default()
 
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000", "http://192.168.3.58:8081"}, // ใส่ origin ของ frontend
+		AllowOrigins:     []string{"http://localhost:8081", "http://192.168.3.58:8081", "https://f4ddb5204500.ngrok-free.app"}, // ใส่ origin ของ frontend
 		AllowMethods:     []string{"GET", "POST", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type"},
 		ExposeHeaders:    []string{"Content-Length"},
